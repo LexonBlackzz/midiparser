@@ -10,12 +10,12 @@ with open("flourish.mid", "rb") as f:
     midi_tracks_value = int.from_bytes(midi_tracks, byteorder="big")
     print("MIDI Tracks:", midi_tracks_value)
 
-    ppqn = data[12:14] # Read the PPQN resolution, bytes 12 and 13, expected sizes 24-65535
+    ppqn = data[12:14] # Read the PPQN resolution, bytes 12 and 13, expected sizes 1-65535
     ppqn_value = int.from_bytes(ppqn, byteorder="big")
     print("PPQN Resolution:", ppqn_value)
 
     cursor = 14 # Start of the first track chunk
-    for i in range(1):
+    for i in range(3):
         if data[cursor:cursor+4] == b'MTrk':
             print(f"Track {i+1} found at byte {cursor}")
             p = 0
@@ -27,6 +27,11 @@ with open("flourish.mid", "rb") as f:
             track_data = data[cursor+8:cursor+8+track_length] # Reads the track data based on the track length
 
             while p < len(track_data):
+
+                
+
+                print(f"DEBUG: Current p: {p}, Total length: {len(track_data)}")
+                status = track_data[p]
                 delta = 0
                 while True:
                     byte = track_data[p]
@@ -34,7 +39,7 @@ with open("flourish.mid", "rb") as f:
                     delta = (delta << 7) | (byte & 0x7F)
                     if byte < 0x80:
                         break                                                     
-                print(f"Delta time: {delta}")
+                #print(f"Delta time: {delta}")
 
                 status = track_data[p] # Reads what kind of event it is
                 print(f"First meta event of track {i+1}: {status}")
@@ -43,13 +48,43 @@ with open("flourish.mid", "rb") as f:
                 if 0x80 <= status <= 0xEF: # MIDI event
                     command = status & 0xF0
                     channel = status & 0x0F
-                    
-                    if command == 0xC0:
+                    if command == 0x90: # Note on
+                        note = track_data[p]
+                        velocity = track_data[p+1]
+                        print(f"Note on: channel {channel}, note {note}, velocity {velocity}")
+                        p += 2
+
+                    if command == 0x80: # Note off
+                        note = track_data[p]
+                        velocity = track_data[p+1]
+                        print(f"Note off: channel {channel}, note {note}, velocity {velocity}") 
+                        p += 2
+
+                    if command == 0xB0: # Control change
+                        controller = track_data[p]
+                        value = track_data[p+1]
+                        print(f"Control change on channel {channel}: controller {controller}, value {value}")
+                        p += 2
+
+                    if command == 0xC0: # Program change
                         instrument = track_data[p]
                         print(f"Program change on channel {channel}: instrument {instrument}")
+                        p += 1
+                    
+                    if command == 0xD0: # Channel pressure
+                        pressure = track_data[p]
+                        print(f"Channel pressure on channel {channel}: pressure {pressure}")
+                        p += 1
+
+                    if command == 0xE0: # Pitch bends
+                        lsb = track_data[p]
+                        msb = track_data[p+1]
+                        pitch_bend_value = (msb << 7) | lsb
+                        print(f"Pitch bend on channel {channel}: value {pitch_bend_value - 8192}")
+                        p += 2
 
 
-                if status == 0xFF: # Metadata
+                elif status == 0xFF: # Metadata
                     status_type = track_data[p]
                     print(f"First meta event type of track {i+1}: {status_type}")
                     p += 1
@@ -79,6 +114,7 @@ with open("flourish.mid", "rb") as f:
 
                     if status_type == 0x2F: # End of track
                         print(f"End of track {i+1}")
+                        #p += 1
                         break
 
                     if status_type == 0x51: # Tempo
@@ -97,7 +133,8 @@ with open("flourish.mid", "rb") as f:
                         scale = track_data[p+1]
                         print(f"Key signature: {key} sharps/flats, scale: {'major' if scale == 0 else 'minor'}")
                         p += status_length
-                #else:
-                #    p += status_length # Skip the event data for now, as we are only interested in the first meta event of each track
+                else:
+                    print(f"ALARM: Found unexpected byte {status} at pointer {p}")
+                    p += status_length # Skip the event data for now, as we are only interested in the first meta event of each track
             cursor += 8 + track_length
             
