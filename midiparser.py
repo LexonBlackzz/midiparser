@@ -1,4 +1,15 @@
-with open("flourish.mid", "rb") as f:
+from copy import Error
+
+
+with open("Black Rose Apostle.mid", "rb") as f:
+
+    all_notes = 0
+    off_notes = 0
+    active_notes = {}
+    note_pairs = []
+    all_events = []
+    absolute_tick = 0
+    running_status = None
     data = f.read()
     print(data[:25])
 
@@ -15,7 +26,7 @@ with open("flourish.mid", "rb") as f:
     print("PPQN Resolution:", ppqn_value)
 
     cursor = 14 # Start of the first track chunk
-    for i in range(3):
+    for i in range(midi_tracks_value):
         if data[cursor:cursor+4] == b'MTrk':
             print(f"Track {i+1} found at byte {cursor}")
             p = 0
@@ -25,13 +36,11 @@ with open("flourish.mid", "rb") as f:
             print(f"Track {i+1} length: {track_length}")
 
             track_data = data[cursor+8:cursor+8+track_length] # Reads the track data based on the track length
-
+        
             while p < len(track_data):
 
-                
-
-                print(f"DEBUG: Current p: {p}, Total length: {len(track_data)}")
-                status = track_data[p]
+                #print(f"DEBUG: Current p: {p}, Total length: {len(track_data)}")
+                #status = track_data[p]
                 delta = 0
                 while True:
                     byte = track_data[p]
@@ -40,56 +49,96 @@ with open("flourish.mid", "rb") as f:
                     if byte < 0x80:
                         break                                                     
                 #print(f"Delta time: {delta}")
+                absolute_tick += delta
 
                 status = track_data[p] # Reads what kind of event it is
-                print(f"First meta event of track {i+1}: {status}")
-                p += 1
+                if status >= 0x80:
+                    running_status = status
+                    p += 1
+                    if running_status < 0xF0:
+                        running_status = status
+                elif status >= 0xFF:
+                    # Meta events do not use running status, so we do not update it
+                    p += 1
+                else:
+                    status = running_status
+                if status is None:
+                    raise Error("Missing status byte")
+                
+                #print(f"DEBUG: Status byte: {status:#02x} at position {p}")
+                #print(f"First meta event of track {i+1}: {status}")
+                #p += 1
                 
                 if 0x80 <= status <= 0xEF: # MIDI event
+                    
                     command = status & 0xF0
                     channel = status & 0x0F
                     if command == 0x90: # Note on
                         note = track_data[p]
                         velocity = track_data[p+1]
-                        print(f"Note on: channel {channel}, note {note}, velocity {velocity}")
+                        #print(f"Note on: channel {channel}, note {note}, velocity {velocity}")
+                        
+                        if velocity > 0:
+                            active_notes[(channel, note)] = (absolute_tick, velocity)
+                            all_notes += 1
+                        else:
+                            if (channel, note) in active_notes:
+                                start_tick, start_velocity = active_notes.pop((channel, note))
+                                note_pairs.append((start_tick, absolute_tick, channel, note, start_velocity))
+                            off_notes += 1
                         p += 2
 
                     if command == 0x80: # Note off
                         note = track_data[p]
                         velocity = track_data[p+1]
-                        print(f"Note off: channel {channel}, note {note}, velocity {velocity}") 
+                        #print(f"Note off: channel {channel}, note {note}, velocity {velocity}")
+                        if (channel, note) in active_notes:
+                                start_tick, start_velocity = active_notes.pop((channel, note))
+                                note_pairs.append((start_tick, absolute_tick, channel, note, start_velocity))
+                        off_notes += 1
                         p += 2
 
                     if command == 0xB0: # Control change
                         controller = track_data[p]
                         value = track_data[p+1]
-                        print(f"Control change on channel {channel}: controller {controller}, value {value}")
+                        #print(f"Control change on channel {channel}: controller {controller}, value {value}")
                         p += 2
 
                     if command == 0xC0: # Program change
                         instrument = track_data[p]
-                        print(f"Program change on channel {channel}: instrument {instrument}")
+                        #print(f"Program change on channel {channel}: instrument {instrument}")
                         p += 1
                     
                     if command == 0xD0: # Channel pressure
                         pressure = track_data[p]
-                        print(f"Channel pressure on channel {channel}: pressure {pressure}")
+                        #print(f"Channel pressure on channel {channel}: pressure {pressure}")
                         p += 1
 
                     if command == 0xE0: # Pitch bends
                         lsb = track_data[p]
                         msb = track_data[p+1]
                         pitch_bend_value = (msb << 7) | lsb
-                        print(f"Pitch bend on channel {channel}: value {pitch_bend_value - 8192}")
+                        #print(f"Pitch bend on channel {channel}: value {pitch_bend_value - 8192}")
                         p += 2
 
+                elif status == 0xF0 or status == 0xF7: # SysEx event
+                    sysex_length = 0
+                    while True:
+                        byte = track_data[p]
+                        p += 1
+                        sysex_length = (sysex_length << 7) | (byte & 0x7F)
+                        if byte < 0x80:
+                            break
+                    
+                    print(f"SysEx event of length {sysex_length} at position {p}")
+                    p += sysex_length # Skip the SysEx event data for now, as we are only interested in the first meta event of each track
 
                 elif status == 0xFF: # Metadata
                     status_type = track_data[p]
-                    print(f"First meta event type of track {i+1}: {status_type}")
+                    #print(f"First meta event type of track {i+1}: {status_type}")
                     p += 1
                     status_length = track_data[p] # Reads how many bytes the metadata is
-                    print(f"First meta event length of track {i+1}: {status_length}")
+                    #print(f"First meta event length of track {i+1}: {status_length}")
                     p += 1
 
                     if status_type == 0x01: # Any text
@@ -137,4 +186,13 @@ with open("flourish.mid", "rb") as f:
                     print(f"ALARM: Found unexpected byte {status} at pointer {p}")
                     p += status_length # Skip the event data for now, as we are only interested in the first meta event of each track
             cursor += 8 + track_length
-            
+
+    print("All notes:", all_notes)
+    print("Off notes:", off_notes)
+    print("Note pairs:", len(note_pairs))
+    print("Sorting events...")
+    for start_tick, end_tick, channel, note, velocity in note_pairs:
+        all_events.append((start_tick, 0x90 | channel, note, velocity))
+        all_events.append((end_tick, 0x80 | channel, note, 0))
+    all_events.sort(key=lambda x: x[0]) # Sort events by their tick value
+    print("All events:", len(all_events))
