@@ -81,6 +81,11 @@ class MidiParser:
                         
                         if 0x80 <= status <= 0xEF: # MIDI event
                             
+                            if p + 1 >= len(track_data):
+                                print(f"!!! Pointer Overflow on Track {i+1} !!!")
+                                print(f"Current p: {p}, Track Length: {len(track_data)}")
+                                break # Exit the while loop for this track safely
+
                             command = status & 0xF0
                             channel = status & 0x0F
                             if command == 0x90: # Note on
@@ -147,55 +152,61 @@ class MidiParser:
                             status_type = track_data[p]
                             #print(f"First meta event type of track {i+1}: {status_type}")
                             p += 1
-                            status_length = track_data[p] # Reads how many bytes the metadata is
-                            #print(f"First meta event length of track {i+1}: {status_length}")
-                            p += 1
+                            status_length = 0
+                            while True:
+                                byte = track_data[p]
+                                p += 1
+                                status_length = (status_length << 7) | (byte & 0x7F)
+                                if byte < 0x80:
+                                    break    
+                            
+                            data_start = p
 
                             if status_type == 0x01: # Any text
                                 len_text = track_data[p:p+status_length].decode("utf-8", errors="ignore")
                                 print(f"Text: {len_text}")
                                 p += status_length
 
-                            if status_type == 0x02: # Copyright
+                            elif status_type == 0x02: # Copyright
                                 copyright_name = track_data[p:p+status_length].decode("utf-8", errors="ignore")
                                 print(f"Copyright: {copyright_name}")
                                 p += status_length
 
-                            if status_type == 0x03: # Track name
+                            elif status_type == 0x03: # Track name
                                 track_name = track_data[p:p+status_length].decode("utf-8", errors="ignore") # Reads the track name based on the length of the metadata
                                 print(f"Track {i+1} name: {track_name}")
                                 p += status_length
 
-                            if status_type == 0x04: # Instrument name
+                            elif status_type == 0x04: # Instrument name
                                 instrument_name = track_data[p:p+status_length].decode("utf-8", errors="ignore")
                                 print(f"Instrument name: {instrument_name}")
                                 p += status_length
 
-                            if status_type == 0x2F: # End of track
+                            elif status_type == 0x2F: # End of track
                                 print(f"End of track {i+1}")
                                 #p += 1
                                 break
 
-                            if status_type == 0x51: # Tempo
+                            elif status_type == 0x51: # Tempo
                                 tempo = int.from_bytes(track_data[p:p+3], byteorder="big") # Reads the tempo in microseconds per quarter note (uint24)
                                 print(f"Tempo: {60000000 / tempo}")
                                 self.tempo_map.append((self.absolute_tick, tempo))
                                 p += status_length
 
-                            if status_type == 0x58: # Time signature
+                            elif status_type == 0x58: # Time signature
                                 numerator = track_data[p]
                                 denominator = track_data[p+1]
                                 print(f"Time signature: {numerator}/{2**denominator}")
                                 p += status_length
 
-                            if status_type == 0x59: # Key signature
+                            elif status_type == 0x59: # Key signature
                                 key = track_data[p]
                                 scale = track_data[p+1]
                                 print(f"Key signature: {key} sharps/flats, scale: {'major' if scale == 0 else 'minor'}")
                                 p += status_length
                         else:
                             print(f"ALARM: Found unexpected byte {status} at pointer {p}")
-                            p += status_length # Skip the event data for now, as we are only interested in the first meta event of each track
+                            p = data_start + status_length # Skip the event data for now, as we are only interested in the first meta event of each track
                     cursor += 8 + track_length
 
             #print("All notes:", all_notes)
@@ -207,7 +218,7 @@ class MidiParser:
         for start_tick, end_tick, channel, note, velocity in self.note_pairs:
             self.all_events.append((start_tick, 0x90 | channel, note, velocity))
             self.all_events.append((end_tick, 0x80 | channel, note, 0))
-        self.all_events.sort(key=lambda x: x[0]) # Sort events by their tick value
+        self.all_events.sort(key=lambda x: (x[0], 0 if (x[1] & 0xF0) == 0x80 else 1)) # Sort events by their tick value
         print("All events:", len(self.all_events))
         print("ALL MESSAGES ARE FROM NOW ON midiplayer.py!!!")
         return self.all_events, self.tempo_map, self.ppqn_value
