@@ -182,13 +182,8 @@ class MidiParser:
                                 #print(f"Instrument name: {instrument_name}")
                                 p += status_length
 
-<<<<<<< HEAD
                             elif status_type == 0x2F: # End of track
-                                print(f"End of track {i+1}")
-=======
-                            if status_type == 0x2F: # End of track
                                 #print(f"End of track {i+1}")
->>>>>>> 401d450477db0f1985ea30116a0ef9c1195fa1e2
                                 #p += 1
                                 break
 
