@@ -140,7 +140,7 @@ class MidiParser:
                                 if byte < 0x80:
                                     break
                             
-                            print(f"SysEx event of length {sysex_length} at position {p}")
+                            #print(f"SysEx event of length {sysex_length} at position {p}")
                             p += sysex_length # Skip the SysEx event data for now, as we are only interested in the first meta event of each track
 
                         elif status == 0xFF: # Metadata
@@ -153,45 +153,45 @@ class MidiParser:
 
                             if status_type == 0x01: # Any text
                                 len_text = track_data[p:p+status_length].decode("utf-8", errors="ignore")
-                                print(f"Text: {len_text}")
+                                #print(f"Text: {len_text}")
                                 p += status_length
 
                             if status_type == 0x02: # Copyright
                                 copyright_name = track_data[p:p+status_length].decode("utf-8", errors="ignore")
-                                print(f"Copyright: {copyright_name}")
+                                #print(f"Copyright: {copyright_name}")
                                 p += status_length
 
                             if status_type == 0x03: # Track name
                                 track_name = track_data[p:p+status_length].decode("utf-8", errors="ignore") # Reads the track name based on the length of the metadata
-                                print(f"Track {i+1} name: {track_name}")
+                                #print(f"Track {i+1} name: {track_name}")
                                 p += status_length
 
                             if status_type == 0x04: # Instrument name
                                 instrument_name = track_data[p:p+status_length].decode("utf-8", errors="ignore")
-                                print(f"Instrument name: {instrument_name}")
+                                #print(f"Instrument name: {instrument_name}")
                                 p += status_length
 
                             if status_type == 0x2F: # End of track
-                                print(f"End of track {i+1}")
+                                #print(f"End of track {i+1}")
                                 #p += 1
                                 break
 
                             if status_type == 0x51: # Tempo
                                 tempo = int.from_bytes(track_data[p:p+3], byteorder="big") # Reads the tempo in microseconds per quarter note (uint24)
-                                print(f"Tempo: {60000000 / tempo}")
+                                #print(f"Tempo: {60000000 / tempo}")
                                 self.tempo_map.append((self.absolute_tick, tempo))
                                 p += status_length
 
                             if status_type == 0x58: # Time signature
                                 numerator = track_data[p]
                                 denominator = track_data[p+1]
-                                print(f"Time signature: {numerator}/{2**denominator}")
+                                #print(f"Time signature: {numerator}/{2**denominator}")
                                 p += status_length
 
                             if status_type == 0x59: # Key signature
                                 key = track_data[p]
                                 scale = track_data[p+1]
-                                print(f"Key signature: {key} sharps/flats, scale: {'major' if scale == 0 else 'minor'}")
+                                #print(f"Key signature: {key} sharps/flats, scale: {'major' if scale == 0 else 'minor'}")
                                 p += status_length
                         else:
                             print(f"ALARM: Found unexpected byte {status} at pointer {p}")
@@ -209,5 +209,4 @@ class MidiParser:
             self.all_events.append((end_tick, 0x80 | channel, note, 0))
         self.all_events.sort(key=lambda x: x[0]) # Sort events by their tick value
         print("All events:", len(self.all_events))
-        print("ALL MESSAGES ARE FROM NOW ON midiplayer.py!!!")
         return self.all_events, self.tempo_map, self.ppqn_value
