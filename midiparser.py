@@ -1,5 +1,7 @@
 from copy import Error
 
+from matplotlib.pylab import byte
+
 class MidiParser:
 
     def __init__(self, filename):
@@ -8,7 +10,18 @@ class MidiParser:
         self.all_events = []
         self.ppqn_value = 0
         self.note_pairs = []
-        
+    
+    def read_vlq(self, data, p):
+        value = 0
+        bytes_read = 0
+        while True:
+            byte = data[p + bytes_read]
+            bytes_read += 1
+            value = (value << 7) | (byte & 0x7F)
+            if byte < 0x80:
+                break    
+        return value, bytes_read
+
     def parse(self):
         with open(self.filename, "rb") as f:
             self.tempo_map = []
@@ -36,6 +49,7 @@ class MidiParser:
             cursor = 14 # Start of the first track chunk
             for i in range(midi_tracks_value):
                 if data[cursor:cursor+4] == b'MTrk':
+                    active_notes = {}
                     self.absolute_tick = 0
                     self.running_status = None
                     print(f"Track {i+1} found at byte {cursor}")
@@ -50,42 +64,59 @@ class MidiParser:
                     while p < len(track_data):
 
                         #print(f"DEBUG: Current p: {p}, Total length: {len(track_data)}")
-                        #status = track_data[p]
-                        delta = 0
-                        while True:
-                            byte = track_data[p]
-                            p += 1
-                            delta = (delta << 7) | (byte & 0x7F)
-                            if byte < 0x80:
-                                break                                                     
-                        #print(f"Delta time: {delta}")
+                        delta, delta_length = self.read_vlq(track_data, p) 
+                        p += delta_length
                         self.absolute_tick += delta
 
-                        status = track_data[p] # Reads what kind of event it is
-                        if status >= 0x80:
+                        if p >= len(track_data):
+                            print(f"!!! Pointer Overflow on Track {i+1} after reading delta time !!!")
+                            print(f"Current p: {p}, Track Length: {len(track_data)}")
+                            break # Exit the while loop for this track safely
+
+                        byte = track_data[p] # Reads what kind of event it is
+                        #print(track_data[:10].hex(' '))
+                        if byte >= 0x80: 
+                            status = byte
+                            p += 1
+                            if 0x80 <= byte <= 0xEF:
+                                self.running_status = byte
+                        else:
+                            if self.running_status is None:
+                                print(f"!!! Orphaned data byte {byte:#04x} at pointer {p}, halting track !!!")
+                                break
+                            status = self.running_status
+                        '''if status >= 0x80:
                             p += 1
                             if 0x80 <= status <= 0xEF:
                                 self.running_status = status
                             elif status in (0xF0, 0xF7):
                                 self.running_status = None
                         if status is None:
-                            raise Error("Missing status byte")
+                            raise Error("Missing status byte")'''
                         
                         #print(f"DEBUG: Status byte: {status:#02x} at position {p}")
                         #print(f"First meta event of track {i+1}: {status}")
                         #p += 1
 
                         if 0x80 <= status <= 0xEF: # MIDI event
-                            
                             command = status & 0xF0
                             channel = status & 0x0F
+                            if command in (0xC0, 0xD0): # Program change and channel pressure events only have one data byte
+                                data_length = 1
+                            else:
+                                data_length = 2
+
+                            if p + data_length > len(track_data):
+                                print(f"!!! Pointer Overflow on Track {i+1} while reading MIDI event data !!!")
+                                print(f"Current p: {p}, Expected data length: {data_length}, Track Length: {len(track_data)}")
+                                break
+                            
                             if command == 0x90: # Note on
                                 if p + 1 >= len(track_data):
                                     print(f"!!! Pointer Overflow on Track {i+1} !!!")
                                     print(f"Current p: {p}, Track Length: {len(track_data)}")
                                     break # Exit the while loop for this track safely
-                                note = track_data[p]
-                                velocity = track_data[p+1]
+                                note, velocity = track_data[p], track_data[p+1]
                                 #print(f"Note on: channel {channel}, note {note}, velocity {velocity}")
                                 
                                 if velocity > 0:
@@ -96,47 +127,50 @@ class MidiParser:
                                         start_tick, start_velocity = active_notes.pop((channel, note))
                                         self.note_pairs.append((start_tick, self.absolute_tick, channel, note, start_velocity))
                                     off_notes += 1
-                                p += 2
+                                #p += 2
 
-                            if command == 0x80: # Note off
-                                note = track_data[p]
-                                velocity = track_data[p+1]
+                            elif command == 0x80: # Note off
+                                if p + 1 >= len(track_data):
+                                    print(f"!!! Pointer Overflow on Track {i+1} !!!")
+                                    print(f"Current p: {p}, Track Length: {len(track_data)}")
+                                    break # Exit the while loop for this track safely
+                                note, velocity = track_data[p], track_data[p+1]
                                 #print(f"Note off: channel {channel}, note {note}, velocity {velocity}")
                                 if (channel, note) in active_notes:
                                         start_tick, start_velocity = active_notes.pop((channel, note))
                                         self.note_pairs.append((start_tick, self.absolute_tick, channel, note, start_velocity))
                                 off_notes += 1
-                                p += 2
+                                #p += 2
 
                             elif command == 0xA0: # Polyphonic key pressure
                                 note = track_data[p]
                                 pressure = track_data[p+1]
                                 #print(f"Polyphonic key pressure on channel {channel}: note {note}, pressure {pressure}")
-                                p += 2
+                                #p += 2
 
                             elif command == 0xB0: # Control change
                                 controller = track_data[p]
                                 value = track_data[p+1]
                                 #print(f"Control change on channel {channel}: controller {controller}, value {value}")
-                                p += 2
+                                #p += 2
 
                             elif command == 0xC0: # Program change
                                 instrument = track_data[p]
                                 #print(f"Program change on channel {channel}: instrument {instrument}")
-                                p += 1
+                                #p += 1
                             
                             elif command == 0xD0: # Channel pressure
                                 pressure = track_data[p]
                                 #print(f"Channel pressure on channel {channel}: pressure {pressure}")
-                                p += 1
+                                #p += 1
 
                             elif command == 0xE0: # Pitch bends
                                 lsb = track_data[p]
                                 msb = track_data[p+1]
                                 pitch_bend_value = (msb << 7) | lsb
                                 #print(f"Pitch bend on channel {channel}: value {pitch_bend_value - 8192}")
-                                p += 2
-
+                                #p += 2
+                            p += data_length
                         elif status == 0xF0 or status == 0xF7: # SysEx event
                             sysex_length = 0
                             while True:
@@ -205,9 +239,14 @@ class MidiParser:
                                 scale = track_data[p+1]
                                 #print(f"Key signature: {key} sharps/flats, scale: {'major' if scale == 0 else 'minor'}")
                                 p += status_length
+                            else:
+                                print(f"ALARM: Found unexpected meta event {status_type} at pointer {p}")
+                                p += status_length
                         else:
                             print(f"ALARM: Found unexpected byte {status} at pointer {p}")
-                            p = data_start + status_length # Skip the event data for now, as we are only interested in the first meta event of each track
+                            break
+                            #p = data_start + status_length # Skip the event data for now, as we are only interested in the first meta event of each track
+                    #print(f"Track {i+1} done. Tempo map so far: {self.tempo_map}")    
                     cursor += 8 + track_length
 
             #print("All notes:", all_notes)
