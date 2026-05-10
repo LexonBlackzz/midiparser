@@ -63,32 +63,27 @@ class MidiParser:
 
                         status = track_data[p] # Reads what kind of event it is
                         if status >= 0x80:
-                            running_status = status
                             p += 1
-                            if running_status < 0xF0:
-                                running_status = status
-                        elif status >= 0xFF:
-                            # Meta events do not use running status, so we do not update it
-                            p += 1
-                        else:
-                            status = running_status
+                            if 0x80 <= status <= 0xEF:
+                                self.running_status = status
+                            elif status in (0xF0, 0xF7):
+                                self.running_status = None
                         if status is None:
                             raise Error("Missing status byte")
                         
                         #print(f"DEBUG: Status byte: {status:#02x} at position {p}")
                         #print(f"First meta event of track {i+1}: {status}")
                         #p += 1
-                        
+
                         if 0x80 <= status <= 0xEF: # MIDI event
                             
-                            if p + 1 >= len(track_data):
-                                print(f"!!! Pointer Overflow on Track {i+1} !!!")
-                                print(f"Current p: {p}, Track Length: {len(track_data)}")
-                                break # Exit the while loop for this track safely
-
                             command = status & 0xF0
                             channel = status & 0x0F
                             if command == 0x90: # Note on
+                                if p + 1 >= len(track_data):
+                                    print(f"!!! Pointer Overflow on Track {i+1} !!!")
+                                    print(f"Current p: {p}, Track Length: {len(track_data)}")
+                                    break # Exit the while loop for this track safely
                                 note = track_data[p]
                                 velocity = track_data[p+1]
                                 #print(f"Note on: channel {channel}, note {note}, velocity {velocity}")
@@ -113,23 +108,29 @@ class MidiParser:
                                 off_notes += 1
                                 p += 2
 
-                            if command == 0xB0: # Control change
+                            elif command == 0xA0: # Polyphonic key pressure
+                                note = track_data[p]
+                                pressure = track_data[p+1]
+                                #print(f"Polyphonic key pressure on channel {channel}: note {note}, pressure {pressure}")
+                                p += 2
+
+                            elif command == 0xB0: # Control change
                                 controller = track_data[p]
                                 value = track_data[p+1]
                                 #print(f"Control change on channel {channel}: controller {controller}, value {value}")
                                 p += 2
 
-                            if command == 0xC0: # Program change
+                            elif command == 0xC0: # Program change
                                 instrument = track_data[p]
                                 #print(f"Program change on channel {channel}: instrument {instrument}")
                                 p += 1
                             
-                            if command == 0xD0: # Channel pressure
+                            elif command == 0xD0: # Channel pressure
                                 pressure = track_data[p]
                                 #print(f"Channel pressure on channel {channel}: pressure {pressure}")
                                 p += 1
 
-                            if command == 0xE0: # Pitch bends
+                            elif command == 0xE0: # Pitch bends
                                 lsb = track_data[p]
                                 msb = track_data[p+1]
                                 pitch_bend_value = (msb << 7) | lsb
