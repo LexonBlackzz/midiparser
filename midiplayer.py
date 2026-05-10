@@ -6,7 +6,7 @@ import midiparser as parser
 kdm = ctypes.WinDLL("OmniMIDI.dll")
 init = kdm.IsKDMAPIAvailable()
 
-midi = parser.MidiParser("Shanghai Teahouse~Chinese Tea V1.mid")
+midi = parser.MidiParser("Black Rose Apostle.mid")
 events, tempo_map, ppqn = midi.parse()
 
 print("Events:", len(events))
@@ -71,14 +71,14 @@ for tick, status, note, velocity in events:
 
     while (time.perf_counter() - start_time) < target_time:
         pass
-    while event_idx < total_events and events[event_idx][0] <= state['current_midi_tick'] :
-        tick, status, note, velocity = events[event_idx]
-        if status >= 0x90 and velocity > 0:
-            send_note(status, note, velocity)
-            state['notes'] += 1
-        elif status >= 0x80:
-            send_note_off(status, note)
-        event_idx += 1
+    #while event_idx < total_events and events[event_idx][0] <= state['current_midi_tick'] :
+    #    tick, status, note, velocity = events[event_idx]
+    if status >= 0x90 and velocity > 0:
+        send_note(status, note, velocity)
+        state['notes'] += 1
+    elif status >= 0x80:
+        send_note_off(status, note)
+    event_idx += 1
 
 print("\nPlayback finished! Waiting for 5 seconds before terminating the stream...")
 time.sleep(5)
