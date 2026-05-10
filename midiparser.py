@@ -216,6 +216,16 @@ class MidiParser:
                                 instrument_name = track_data[p:p+status_length].decode("utf-8", errors="ignore")
                                 #print(f"Instrument name: {instrument_name}")
                                 p += status_length
+                            
+                            elif status_type == 0x20: # MIDI channel prefix
+                                channel_prefix = track_data[p]
+                                #print(f"MIDI channel prefix: {channel_prefix}")
+                                p += status_length
+
+                            elif status_type == 0x21: # MIDI port
+                                midi_port = track_data[p]
+                                #print(f"MIDI port: {midi_port}")
+                                p += status_length
 
                             elif status_type == 0x2F: # End of track
                                 #print(f"End of track {i+1}")
