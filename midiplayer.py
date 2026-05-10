@@ -79,6 +79,8 @@ for tick, status, note, velocity in events:
         elif status >= 0x80:
             send_note_off(status, note)
         event_idx += 1
-    
+
+print("\nPlayback finished! Waiting for 5 seconds before terminating the stream...")
+time.sleep(5)
 kdm.TerminateKDMAPIStream()
 state['running'] = False
