@@ -1,7 +1,5 @@
 from copy import Error
 
-from matplotlib.pylab import byte
-
 class MidiParser:
 
     def __init__(self, filename):
