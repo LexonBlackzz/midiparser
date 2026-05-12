@@ -7,28 +7,49 @@ import time
 import midiparser as parser
 kdm = ctypes.WinDLL("OmniMIDI.dll")
 init = kdm.IsKDMAPIAvailable()
-
-color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+channel_colors = [
+    (255, 0, 0, 255),
+    (255, 60, 0, 255),
+    (255, 127, 0, 255),
+    (255, 255, 0, 255),
+    (127, 255, 0, 255),
+    (60, 255, 0, 255),
+    (0, 255, 0, 255),
+    (0, 255, 127, 255),
+    (0, 255, 255, 255),
+    (0, 127, 255, 255),
+    (0, 60, 255, 255),
+    (0, 0, 255, 255),
+    (127, 0, 255, 255),
+    (255, 0, 255, 255),
+    (255, 0, 127, 255),
+    (255, 0, 60, 255)
+]
 WIDTH, HEIGHT = 800, 600
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-clock = pygame.time.Clock()
-#rect = pygame.Rect((WIDTH / 127), y, (WIDTH / 127), )
+clock = pygame.Clock()
 
 
 
-midi = parser.MidiParser("flourish.mid")
+
+midi = parser.MidiParser("Shanghai Teahouse~Chinese Tea V1s.mid")
 events, tempo_map, ppqn = midi.parse()
 
 print("Events:", len(events))
 print("Tempo map:", tempo_map)
 print("PPQN:", ppqn)
 
+
+
 state = {
+    "active_notes": {},
     "current_midi_tick": 0,
     "notes": 0,
-    "running": True
+    "running": True,
+    "note_channelposition": lambda channel: channel * (HEIGHT / 16)
 }
+
 
 def info(shared_state):
     while shared_state['running']:
@@ -58,6 +79,10 @@ def play_midi(events, tempo_map, ppqn, state):
     tempo_index = 0
     start_time = time.perf_counter()
     for tick, status, note, velocity in events:
+        
+        channel  = status & 0x0F
+        key = (channel, note)
+        
         state['current_midi_tick'] = tick
         if tempo_index + 1 < len(tempo_map):
             if state['current_midi_tick'] >= tempo_map[tempo_index + 1][0]:
@@ -80,13 +105,19 @@ def play_midi(events, tempo_map, ppqn, state):
         #while event_idx < total_events and events[event_idx][0] <= state['current_midi_tick'] :
         #    tick, status, note, velocity = events[event_idx]
         if status >= 0x90 and velocity > 0:
+            state['active_notes'][key] = {
+                "start_tick": tick,
+                "velocity": velocity
+            }
             send_note(status, note, velocity)
             state['notes'] += 1
-        elif status >= 0x80:
+        elif status >= 0x80 or (status >= 0x90 and velocity == 0):
+            state['active_notes'].pop(key, None)
             send_note_off(status, note)
         #event_idx += 1
 
         last_tick = tick
+    state['running'] = False
 
         
 
@@ -104,10 +135,31 @@ information_thread.start()
 
 playback_thread = threading.Thread(target=play_midi, args=(events, tempo_map, ppqn, state), daemon=True)
 playback_thread.start()
-
-
-print("\nPlayback finished! Waiting for 5 seconds before terminating the stream...")
-time.sleep(5)
-kdm.TerminateKDMAPIStream()
-state['running'] = False
-pygame.quit()
+try:
+    while state["running"]:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                state['running'] = False
+                break
+        screen.fill((20, 25, 23))
+        note_snapshot = state['active_notes'].copy()
+        for (channel, note), note_info in note_snapshot.items():
+            
+            color = channel_colors[channel]
+            note_width = WIDTH / 128
+            note_length = HEIGHT / 16
+            note_position = note * note_width
+            rect = pygame.Rect(note_position, state["note_channelposition"](channel), note_width, note_length)
+            
+            pygame.draw.rect(screen, color, rect)
+        pygame.display.flip()
+        clock.tick(60)
+        
+        
+finally:
+    if not playback_thread.is_alive():
+        print("\nPlayback finished! Waiting for 5 seconds before terminating the stream...")
+        time.sleep(5)
+        kdm.TerminateKDMAPIStream()
+        state['running'] = False
+        pygame.quit()
