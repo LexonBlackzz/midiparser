@@ -1,3 +1,5 @@
+import pygame
+import random
 import ctypes
 import threading
 #import kdmapi as kdm
@@ -6,7 +8,16 @@ import midiparser as parser
 kdm = ctypes.WinDLL("OmniMIDI.dll")
 init = kdm.IsKDMAPIAvailable()
 
-midi = parser.MidiParser("Black Rose Apostle.mid")
+color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+WIDTH, HEIGHT = 800, 600
+pygame.init()
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+clock = pygame.time.Clock()
+#rect = pygame.Rect((WIDTH / 127), y, (WIDTH / 127), )
+
+
+
+midi = parser.MidiParser("flourish.mid")
 events, tempo_map, ppqn = midi.parse()
 
 print("Events:", len(events))
@@ -41,46 +52,62 @@ def send_note_off(status, note):
     data = status | (note << 8)
     kdm.SendDirectData(data)
 
+def play_midi(events, tempo_map, ppqn, state):
+    last_tick = 0
+    cumulative_time = 0.0
+    tempo_index = 0
+    start_time = time.perf_counter()
+    for tick, status, note, velocity in events:
+        state['current_midi_tick'] = tick
+        if tempo_index + 1 < len(tempo_map):
+            if state['current_midi_tick'] >= tempo_map[tempo_index + 1][0]:
+                tempo_index += 1
+                print(f"Tempo changed to {tempo_map[tempo_index][1]} at tick {tick}")
+        
+
+        delta_ticks = tick - last_tick
+        current_tempo_us = tempo_map[tempo_index][1]
+
+        spt = seconds_per_tick(ppqn, current_tempo_us)
+
+        current_tempo_us = tempo_map[tempo_index][1]
+
+        cumulative_time += delta_ticks * spt
+
+        while (time.perf_counter() - start_time) < cumulative_time:
+            if not state['running']: return
+            pass
+        #while event_idx < total_events and events[event_idx][0] <= state['current_midi_tick'] :
+        #    tick, status, note, velocity = events[event_idx]
+        if status >= 0x90 and velocity > 0:
+            send_note(status, note, velocity)
+            state['notes'] += 1
+        elif status >= 0x80:
+            send_note_off(status, note)
+        #event_idx += 1
+
+        last_tick = tick
+
+        
+
+
 kdm.InitializeKDMAPIStream()
 current_midi_tick = 0
 event_idx = 0
 total_events = len(events)
-tempo_index = 0
 notes = 0
-last_tick = 0
-start_time = time.perf_counter()
+
 #cumulative_time = 0.0
 
 information_thread = threading.Thread(target=info, args=(state,), daemon=True)
 information_thread.start()
 
-for tick, status, note, velocity in events:
-    state['current_midi_tick'] = tick
-    if tempo_index + 1 < len(tempo_map):
-        if state['current_midi_tick'] >= tempo_map[tempo_index + 1][0]:
-            tempo_index += 1
-            print(f"Tempo changed to {tempo_map[tempo_index][1]} at tick {tick}")
+playback_thread = threading.Thread(target=play_midi, args=(events, tempo_map, ppqn, state), daemon=True)
+playback_thread.start()
 
-    current_tempo_us = tempo_map[tempo_index][1]
-
-    spt = seconds_per_tick(ppqn, current_tempo_us)
-
-    current_tempo_us = tempo_map[tempo_index][1]
-
-    target_time = state['current_midi_tick'] * spt
-
-    while (time.perf_counter() - start_time) < target_time:
-        pass
-    #while event_idx < total_events and events[event_idx][0] <= state['current_midi_tick'] :
-    #    tick, status, note, velocity = events[event_idx]
-    if status >= 0x90 and velocity > 0:
-        send_note(status, note, velocity)
-        state['notes'] += 1
-    elif status >= 0x80:
-        send_note_off(status, note)
-    event_idx += 1
 
 print("\nPlayback finished! Waiting for 5 seconds before terminating the stream...")
 time.sleep(5)
 kdm.TerminateKDMAPIStream()
 state['running'] = False
+pygame.quit()
