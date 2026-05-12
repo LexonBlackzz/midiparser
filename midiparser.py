@@ -1,3 +1,8 @@
+'''
+MIDIParser - 2026 LexonBlackzz
+Parses your MIDI files. Not the fastest, but it does its job.
+License - MIT
+'''
 from copy import Error
 
 class MidiParser:
