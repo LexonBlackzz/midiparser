@@ -8,8 +8,9 @@ Inefficient (1.5GB for 3 Million notes) ✅
 
 # MIDI Player features
 Uses KDMAPI (OmniMIDI synthesizer) for playback. 🎹  
-Does relatively well up until 300-500k events/sec (on an i5-13600KF) 🐌
-
+Does relatively well up until 300-500k events/sec (on an i5-13600KF) 🐌  
+Channel based visualizer
+ 
 
 ### You're welcome to do anything with the code.
 
