@@ -12,6 +12,7 @@ class MidiParser:
         self.tempo_map = []
         self.all_events = []
         self.ppqn_value = 0
+        self.track_id = 0
         self.note_pairs = []
     
     def read_vlq(self, data, p):
@@ -31,6 +32,7 @@ class MidiParser:
             all_notes = 0
             off_notes = 0
             active_notes = {}
+            self.track_id = 0
             self.note_pairs = []
             self.all_events = []
             self.absolute_tick = 0
@@ -55,6 +57,7 @@ class MidiParser:
                     active_notes = {}
                     self.absolute_tick = 0
                     self.running_status = None
+                    track_id = i
                     print(f"Track {i+1} found at byte {cursor}")
                     p = 0
                     #track_data_start = cursor + 8
@@ -128,7 +131,7 @@ class MidiParser:
                                 else:
                                     if (channel, note) in active_notes:
                                         start_tick, start_velocity = active_notes.pop((channel, note))
-                                        self.note_pairs.append((start_tick, self.absolute_tick, channel, note, start_velocity))
+                                        self.note_pairs.append((start_tick, self.absolute_tick, channel, note, start_velocity, track_id))
                                     off_notes += 1
                                 #p += 2
 
@@ -141,7 +144,7 @@ class MidiParser:
                                 #print(f"Note off: channel {channel}, note {note}, velocity {velocity}")
                                 if (channel, note) in active_notes:
                                         start_tick, start_velocity = active_notes.pop((channel, note))
-                                        self.note_pairs.append((start_tick, self.absolute_tick, channel, note, start_velocity))
+                                        self.note_pairs.append((start_tick, self.absolute_tick, channel, note, start_velocity, track_id))
                                 off_notes += 1
                                 #p += 2
 
@@ -268,9 +271,9 @@ class MidiParser:
             return self.sort_events()
     def sort_events(self):
         print("Sorting events...")
-        for start_tick, end_tick, channel, note, velocity in self.note_pairs:
-            self.all_events.append((start_tick, 0x90 | channel, note, velocity))
-            self.all_events.append((end_tick, 0x80 | channel, note, 0))
+        for start_tick, end_tick, channel, note, velocity, track_id in self.note_pairs:
+            self.all_events.append((start_tick, 0x90 | channel, note, velocity, track_id))
+            self.all_events.append((end_tick, 0x80 | channel, note, 0, track_id))
         self.all_events.sort(key=lambda x: (x[0], 0 if (x[1] & 0xF0) == 0x80 else 1)) # Sort events by their tick value
         print("All events:", len(self.all_events))
         return self.all_events, self.tempo_map, self.ppqn_value
