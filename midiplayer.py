@@ -240,7 +240,7 @@ try:
 
                 duration_ticks = note_data["end_tick"] - note_data["start_tick"]
                 ticks_until_hit = note_data["start_tick"] - visual_tick
-
+                visual_tick = elapsed_seconds / cached_spt
                 y = hit_line - ticks_until_hit * pixels_per_tick
                 bottom_y = note_data["height"]
                 rect = pygame.Rect(note_data["x"], y, note_width, note_data["height"])
